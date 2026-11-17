@@ -1,6 +1,6 @@
 {
   "name": "dsh-source-inbox",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DSH source inbox: archive your own material from 27 platforms into one local knowledge base — official entry links, step-by-step login guidance, paste-a-credential boxes, a controlled browser that reads your own logged-in pages, and link-to-Markdown / WeRead / Cubox / IMAP built in with zero third-party packages. · 素材收件箱：把你自己各平台账号的资料汇聚进本地知识库的统一工作栏。",
   "type": "module",
   "main": "./index.js",
