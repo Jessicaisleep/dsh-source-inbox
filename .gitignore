@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Local build / test artifacts
+_tmp_*/
+*.bak
+*.log
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Project-internal long-term memory (contains local paths + private notes).
+# Kept on disk for the next session, never published.
+继续任务.MD
+继续任务.md

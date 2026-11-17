@@ -1,0 +1,71 @@
+{
+  "name": "dsh-source-inbox",
+  "version": "0.1.0",
+  "description": "DSH source inbox: archive your own material from 28 platforms into one local knowledge base — official entry links, step-by-step login guidance, paste-a-credential boxes, and a controlled browser that reads your own logged-in pages. · 素材收件箱：把你自己各平台账号的资料汇聚进本地知识库的统一工作栏。",
+  "type": "module",
+  "main": "./index.js",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "assets/*.png",
+    "lib/*.js",
+    "locale/*.json",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "source-inbox",
+    "knowledge-base",
+    "archive",
+    "import",
+    "mcp"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jessicaisleep/dsh-source-inbox.git"
+  },
+  "homepage": "https://github.com/Jessicaisleep/dsh-source-inbox#readme",
+  "bugs": {
+    "url": "https://github.com/Jessicaisleep/dsh-source-inbox/issues"
+  },
+  "engines": {
+    "node": ">=22",
+    "dsh": "^0.2.1-rc.1 || ^0.2.2-rc.1 || ^0.2.3-rc.1"
+  },
+  "scripts": {
+    "test": "node tests/smoke.mjs && node tests/adapters-harness.mjs && node tests/browser-harness.mjs && node tests/credentials-harness.mjs && node tests/host-harness.mjs && node tests/client-harness.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-theme"
+      ]
+    }
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
+}
