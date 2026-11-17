@@ -150,6 +150,12 @@ ok(typeof id === 'string' && id.length > 0, 'row has id');
 r = await call('/dsh-source-inbox/api/read?id=' + encodeURIComponent(id));
 ok(r.statusCode === 200, 'GET /read -> 200');
 ok(r.json().text && r.json().text.includes('official export'), 'read returns normalized text');
+// CONTRACT: the panel's delete button reads the id out of this response, so the
+// id must be reachable — `record.id` — and there must be no top-level `id`.
+// The client once used selected.id, got undefined, and the button went dead.
+ok(r.json().record && r.json().record.id === id, 'GET /read exposes the id at record.id');
+ok(r.json().id === undefined, 'GET /read has no top-level id — the client must read record.id');
+ok(['text', 'truncated', 'missing'].every((k) => k in r.json()), 'GET /read keeps the {record,text,truncated,missing} shape the panel renders');
 
 // read missing
 r = await call('/dsh-source-inbox/api/read?id=nope');

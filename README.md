@@ -157,9 +157,10 @@ node tests/host-harness.mjs        # 21 路由 + 17 工具 + 守卫 + 凭据不�
 node tests/client-harness.mjs      # 面板渲染 / 27 行按钮 / steps / 自读 / 凭据输入框 / ▶ 按钮 / 删除 / 词典
 ```
 
-共 **662 项**，全部 `exit=0`。
+共 **669 项**，全部 `exit=0`。
 
-两个已修的回归（都有对应用例，防止再犯）：
+三个已修的回归（都有对应用例，防止再犯）：
 
+- **删除按钮点了没反应**。`/read` 返回的是 `{record, text, truncated, missing}`，**没有顶层 `id`**，而面板删按钮传的是 `removeRecord(selected.id)` —— 拿到 `undefined`，函数首行 `if (!id) return;` 静默返回，按钮看起来就是死的。更糟的是 `client-harness` 当时断言的就是那行坏代码（`onClick: () => removeRecord(selected.id)`），所以 662 项全绿也发现不了。现在取 `selected.record?.id`，并且 `if (!id)` 改成报错而不是静默 return；`host-harness` 也补了「`/read` 的 id 一定在 `record.id`、顶层不能有 id」的形状契约。
 - **登录墙不能靠长度判断**。原来的 `looksLikeLoginWall` 首行 `if (t.length > 900) return false`，而真实登出的抖音页有 1127 字（登录框外面裹着 AI 工坊营销文案）—— 登录页被当成内容归档，还报「已归档」。现在只认登录框专属 UI 串（`扫码登录`/`请先登录`/`Log in to continue` …）或 URL 里的 `/login`、`/signin`、`passport.`。已知代价写在注释里：文章若逐字引用这些 UI 串会被判成墙，多点一次，换掉「把登录页永久存进知识库」。
 - **同一来源同一月的两条记录不能共用一个文件**。`store.put()` 原来在 `id` 还没算出来时就用 `record.innerPath ?? 'file'` 定路径，两条记录都落到 `materialized/<source>/<YYYY-MM>/file.md`，后写的覆盖前一条的文件，于是读 A 的正文显示的是 B。现在先用 `id` 定路径（每条记录独占一个文件），`remove()` 也只删「没有别的记录仍在引用」的文件。

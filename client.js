@@ -688,12 +688,16 @@ window.__ModuleLoader__.load({
       // could recognise it). Declared after postJSON — a dependency array is
       // evaluated during render, so referencing a later const would throw TDZ.
       const removeRecord = useCallback(async (id) => {
-        if (!id) return;
+        // /read answers { record, text, truncated, missing }, so the id lives on
+        // selected.record.id. Passing selected.id handed this function undefined
+        // and the old `if (!id) return` swallowed the click without a word — the
+        // button looked dead. Fail loudly instead of silently.
+        if (!id) { setMsgOk(false); setMessage(t('removeFail')); return; }
         const w = typeof window !== 'undefined' ? window : globalThis;
         if (typeof w.confirm === 'function' && !w.confirm(t('removeConfirm'))) return;
         try {
           await postJSON(`${API}/remove`, { id });
-          if (mounted.current) setSelected((cur) => (cur && cur.id === id ? null : cur));
+          if (mounted.current) setSelected((cur) => (cur && cur.record?.id === id ? null : cur));
           setMsgOk(true); setMessage(`✓ ${t('removeOk')}：${id}`);
           await loadAll();
         } catch (e) { setMsgOk(false); setMessage(`${t('removeFail')}：${String(e?.message ?? t('errNetwork'))}`); }
@@ -1064,9 +1068,9 @@ window.__ModuleLoader__.load({
                 ),
           selected ? h('div', { style: { marginTop: '12px', borderTop: `1px solid ${C.border}`, paddingTop: '10px' } },
             h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' } },
-              h('span', { style: { fontWeight: 600, fontSize: '12px' } }, `${t('readTitle')}：${selected.record?.title ?? selected.id}`),
+              h('span', { style: { fontWeight: 600, fontSize: '12px' } }, `${t('readTitle')}：${selected.record?.title ?? '—'}`),
               h('button', {
-                type: 'button', ...focusable, onClick: () => removeRecord(selected.id),
+                type: 'button', ...focusable, onClick: () => removeRecord(selected.record?.id),
                 style: { ...btnStyle, marginLeft: 'auto', background: C.bgLayer2, color: C.error, border: `1px solid ${C.border}`, fontSize: '11px' },
               }, t('removeLabel')),
             ),

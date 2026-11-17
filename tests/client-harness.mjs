@@ -244,7 +244,15 @@ ok(code.includes('${API}/remove'), 'the panel posts to /remove');
 ok(/const removeRecord = useCallback\(/.test(code), 'removeRecord is a declared callback');
 ok(code.indexOf('const postJSON') < code.indexOf('const removeRecord'), 'removeRecord is declared AFTER postJSON (a dep array is evaluated during render — the reverse order throws TDZ)');
 ok(code.includes("t('removeConfirm')"), 'removal asks for confirmation first');
-ok(code.includes('onClick: () => removeRecord(selected.id)'), 'the preview pane offers the delete action for the open record');
+// REGRESSION (0.2.1): /read answers { record, text, truncated, missing } — there
+// is NO top-level id, so `removeRecord(selected.id)` passed undefined and the
+// guard swallowed the click: the delete button did nothing at all. The old
+// assertion asserted the broken text and thus kept the bug green.
+ok(code.includes('onClick: () => removeRecord(selected.record?.id)'), 'the delete action reads the id off record.id, which is where /read actually puts it');
+ok(!code.includes('removeRecord(selected.id)'), 'the delete action never passes the non-existent top-level selected.id');
+ok(code.includes('cur.record?.id === id'), 'clearing the preview after a delete compares the same field the read response uses');
+ok(!/if \(!id\) return;/.test(code), 'a missing id reports a failure instead of returning silently — a dead-looking button is worse than an error');
+ok(code.includes("t('removeFail')"), 'the delete path surfaces a failure message to the user');
 
 // BEHAVIOR: openExternal must accept https and refuse everything else. It only
 // ever forwards to window.open, which the host turns into shell.openExternal.
