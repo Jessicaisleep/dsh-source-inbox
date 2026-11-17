@@ -8,13 +8,19 @@
 
 - **Phase 0（底座，已交付）**：导入向导、统一 schema、双轨归档、分类索引、侧边栏工作栏、状态/引导面板、模型工具。不登录、不抓取。
 - **Phase 1（本版）**：可插拔适配器框架 + 第一个自动源「投放区观察器」（file-producing 形态）。监视一个本地落地目录，新文件自动走 Phase 0 的导入向导 / 双轨 / 合规闸门。**官方 MCP / API 源仍需一次账号授权，当前未接通**，注册表里诚实标为 `needs-auth`，不会假装它能跑。
-- **每源官方入口按钮（2026-11 增补）**：数据源清单里 **21/28** 条带一键按钮，点开由系统浏览器直达该平台**官方**页面（官方 API → 登录/控制台；只有网页登录态 → 登录页；只给导出 → 导出入口）。剩余 7 条是本地通道或必须在手机/客户端完成的官方备份，行内写明原因而不放死按钮。按钮只跳转：不嵌页面、不接凭据，URL 仅接受 https，走宿主 `window.open → shell.openExternal`。数据见 `lib/sources.js` 的 `links`/`auth`。
+- **每源官方入口按钮（2026-11 增补）**：数据源清单里 **20/27** 条带一键按钮，点开由系统浏览器直达该平台**官方**页面（官方 API → 登录/控制台；只有网页登录态 → 登录页；只给导出 → 导出入口）。剩余 7 条是本地通道或必须在手机/客户端完成的官方备份，行内写明原因而不放死按钮。按钮只跳转：不嵌页面、不接凭据，URL 仅接受 https，走宿主 `window.open → shell.openExternal`。数据见 `lib/sources.js` 的 `links`/`auth`。
 - **Phase 2（本版）：登录之后的分步引导 + 插件自己读**：
-  - **28/28 行带 `steps`（共 86 步）**，每步写清「点哪里 → 拿到什么 → 填到哪里」。例：飞书 5 步（开发者后台建自建应用 → 勾 docx/drive/wiki/bitable 只读权限并批量开通 → 复制 App ID/Secret 存 `_secrets\feishu.json` → 版本管理与发布过审 → 换 user_access_token）；腾讯文档 4 步（含 `400006`/`400007` 错误码与 `Authorization: <token>` 不是 Bearer）；邮箱 4 步（「填授权码不是登录密码」）。只给按钮不给下一步的死路已被这段取代。
+  - **27/27 行带 `steps`（共 84 步）**，每步写清「点哪里 → 拿到什么 → 填到哪里」。例：飞书 5 步（开发者后台建自建应用 → 勾 docx/drive/wiki/bitable 只读权限并批量开通 → 复制 App ID/Secret 存进输入框 → 版本管理与发布过审 → 换 user_access_token）；腾讯文档 4 步（含 `400006`/`400007` 错误码与 `Authorization: <token>` 不是 Bearer）；邮箱 4 步（「填授权码不是登录密码」）。只给按钮不给下一步的死路已被这段取代。
   - **7 个源 / 11 个页面可以「让插件自己读」**：插件启动**自己独占的** Chromium（Edge/Chrome + `--remote-debugging-port` + 插件私有 `--user-data-dir`，零 npm 依赖，走 Node 内置 WebSocket 的 CDP），用户在那个窗口扫码登录一次，之后插件直接读列表并归档成 Markdown 记录。**不动用户日常浏览器的 profile**，因为日常窗口没开调试端口且会暴露全部站点 cookie。
   - **白名单闸门**：只有源注册表里声明过的 https 页面能被读；没写白名单等于什么都不许读，重定向/后缀伪造（`quark.cn.evil.com`）也不行；`/browser/open` 只接受已注册的官方入口 URL。
   - **登录墙不假装成功**：登录态过期时页面会返回 200 + 几百字「扫码登录」，插件用 `looksLikeLoginWall()` 判定后返回 `loginRequired`、**不归档**、并替你把这个页在插件窗口里打开，扫码后再点一次即可。
 - **凭据不再让你手写文件（Phase 2.3）**：以前引导写「拿到 App ID / App Secret → 填到 `_secrets\feishu.json`」，等于要你自己建文件、猜 JSON 键名、手敲格式，写错了没有任何报错。现在 **8 个需要凭据的源（14 个字段）行内直接给输入框**，粘贴后点「保存到本地」，由插件写进 `$DSH_HOME/_secrets/<file>.json`（未设 `DSH_HOME` 时是 `~/.dsh/_secrets`，可用 `config.secretsDir` 或 `DSH_SECRETS_DIR` 指到别处；tmp+rename 原子写、`0600`）；界面和任何接口只回显**打码预览**（`cli_****（12 位）`），明文不出现在响应、日志、工具返回里。文件名与字段都是注册表声明的，越权文件名（`../x`）、未声明字段、超长值、控制字符一律拒绝。故意**没有**「用工具保存凭据」的 tool：密钥一旦写进 tool 参数就会留在对话记录里，所以保存只走面板输入框。见 `lib/credentials.js`。
+- **第三方能力全部收进本体（Phase 3）**：以前的引导会写「交给 envoy-dsh / dsh-link-parse」「用 dsh-scrape-webpage / dsh-read-url 取正文」「用 dsh-cubox 同步」「本机 dsh-email 取邮件」「用 weread-export 导出」——**这些包一个都没装，也请不要去安装这些名字**（名字出现在旧引导里本身就危险：谁先注册这个名字，谁就能拿到用户浏览器里的数据）。现在这些能力**全部实现在插件里，零第三方依赖**，对应数据源行内直接给按钮：
+  - **贴链接转 Markdown**（`lib/fetchdoc.js`）：语雀 / 网页剪藏 / 知乎 / 链接解析行内输入框 + 「▶ 抓取并归档」。自己把 HTML 转 Markdown（标题 / 列表 / 引用 / 表格 / 图片 / 链接 / 代码围栏），优先取 `<article>`/`<main>`/正文容器而不是整页导航。**安全**：只 https、拒 URL 内嵌账号密码、拒 localhost/内网/`169.254` 元数据地址、**重定向后的最终地址要再过一次同样的检查**（否则公开链接能 302 进你的内网）、5 MB 上限、20 s 超时。
+  - **微信读书划线导出**（`lib/weread.js`）：按你粘贴的 Cookie 调官方只读接口（书架 → 每本划线），生成带 front-matter、按章分组的 Markdown。行内按钮「▶ 导出划线」。
+  - **Cubox 收藏同步**（`lib/cubox.js`）：按你粘贴的 API 链接拉收藏（域名必须是 `cubox.pro` 或其子域），每条一张卡片记录。行内按钮「▶ 同步收藏」。
+  - **邮箱收信**（`lib/mailimap.js`）：只用 `node:tls` 手写的 IMAP 客户端，命令仅 `SELECT` / `FETCH` / `LOGOUT`，用 `BODY.PEEK`（**不会把你的邮件标成已读**），解 multipart / base64 / quoted-printable / RFC 2047 主题，HTML 转文本，跳过附件。行内按钮「▶ 收取新邮件」。
+  - 四个按钮都要先在该行粘贴对应凭据；没保存时会直接说「还没有保存 …（先在上面那个输入框里粘贴并保存）」，而不是发一个空请求出去。
 - **四级接入阶梯**：L0 官方 MCP/API → L1 受限官方 API → L2 网页登录态读取 → L3 官方导出/分享/剪藏兜底。
 - **只取抓数据那部分**：授权 / 抓取 / 落盘型存储复用已有插件，本插件只做下游统一整理归档 + 统一 UI（详见规划 §5）。
 - **合规红线**：个人微信 / QQ 聊天记录只走官方备份 / 合并转发 / 分享导出，绝不本地解密数据库。
@@ -27,10 +33,14 @@ client.js           Client 半：window.__ModuleLoader__ 工作栏面板
 lib/schema.js       统一 schema + 双轨判定 + checksum
 lib/store.js        _inbox 落盘 + manifest.jsonl 索引 + 安全读取
 lib/import.js       导入向导：魔数嗅探 / 纠正扩展名 / ZIP / 去重 / 归一 + 合规闸门
-lib/sources.js      四级阶梯 + 28 数据源登记 + auth/links 官方入口 + steps 分步引导 + reads 可读页 + credential 凭据字段 + 合规红线
+lib/sources.js      四级阶梯 + 27 数据源登记 + auth/links 官方入口 + steps 分步引导 + reads 可读页 + credential 凭据字段 + actions 本体按钮 + 合规红线
 lib/adapters.js     Phase 1：适配器注册表 + 投放区观察器（re-arming one-shot 定时）+ 配置持久化
 lib/browser.js      Phase 2：受控 Chromium 桥（CDP，零依赖）+ 白名单闸门 + 登录墙判定
 lib/credentials.js  Phase 2.3：凭据保险库（裸文件名 / 仅声明字段 / 打码回显 / 原子写 0600）
+lib/fetchdoc.js     Phase 3：链接转 Markdown（HTML→MD、正文抽取、https+公网闸门、重定向复查）
+lib/weread.js       Phase 3：微信读书划线导出（官方只读接口，Cookie）
+lib/cubox.js        Phase 3：Cubox 收藏同步（API 链接，域名限 cubox.pro）
+lib/mailimap.js     Phase 3：IMAP 收信（仅 node:tls，BODY.PEEK 不置已读）
 locale/*.json       本地化 meta（title / description / detail）
 docs/DETAIL*.md     插件详情页
 icon.svg            36×36 原创图标
@@ -91,6 +101,10 @@ _inbox root/
 | POST | `/dsh-source-inbox/api/credentials/save` | `{source, values}` 粘贴保存到本地 `_secrets`；未知字段/超长/控制字符/全空 → 400 |
 | POST | `/dsh-source-inbox/api/credentials/clear` | `{source}` 删除该源已存凭据（幂等） |
 | POST | `/dsh-source-inbox/api/remove` | `{id}` 删除一条记录（重写 manifest 并删除它独占的文件）；用于撤回误归档，例如修复前被当成内容存下的登录页 |
+| POST | `/dsh-source-inbox/api/fetch/url` | `{url, source, maxChars, archive}` 贴链接转 Markdown 并归档（内置，无第三方包）；拒 http / 内网 / URL 内嵌账密 / 重定向到内网 |
+| POST | `/dsh-source-inbox/api/export/weread` | `{limit, archive}` 用已保存的 Cookie 导出微信读书划线 |
+| POST | `/dsh-source-inbox/api/export/cubox` | `{limit, archive}` 用已保存的 API 链接同步 Cubox 收藏 |
+| POST | `/dsh-source-inbox/api/export/mail` | `{limit, mailbox, archive}` 用已保存的邮箱凭据走 IMAP 取新邮件（`BODY.PEEK`，不置已读） |
 
 观察器配置存 `<dataDir>/adapters.json`，**不**写 profile 的 `cordis.patch.yml`（configuration.md 禁止插件重写用户 patch 层）。`dir` 必须是绝对路径且不能落在归档目录内（唯一例外是默认的 `<root>/dropzone`），否则观察器会把自己产出的 `_raw/`、`materialized/` 反复吃回来。定时器为 re-arming one-shot（`setTimeout` + `unref()`），cleanup 里 `clearTimeout`。
 
@@ -98,7 +112,7 @@ _inbox root/
 
 ## Agent 工具
 
-`inbox_status` · `inbox_sources` · `inbox_list` · `inbox_read` · `inbox_import` · `inbox_adapters` · `inbox_watch`（= 配置投放区） · `inbox_scan`（= 立即扫描） · `inbox_browser`（= 受控浏览器状态 + 可读页） · `inbox_open_login`（= 打开官方登录页） · `inbox_read_page`（= 读本人已登录页面并归档） · `inbox_credentials`（= 哪些源已有凭据 + 字段名，只读、打码） · `inbox_remove`（= 删除一条记录，撤回误归档）
+`inbox_status` · `inbox_sources` · `inbox_list` · `inbox_read` · `inbox_import` · `inbox_adapters` · `inbox_watch`（= 配置投放区） · `inbox_scan`（= 立即扫描） · `inbox_browser`（= 受控浏览器状态 + 可读页） · `inbox_open_login`（= 打开官方登录页） · `inbox_read_page`（= 读本人已登录页面并归档） · `inbox_credentials`（= 哪些源已有凭据 + 字段名，只读、打码） · `inbox_remove`（= 删除一条记录，撤回误归档） · `inbox_fetch_url`（= 贴链接转 Markdown） · `inbox_export_weread` · `inbox_export_cubox` · `inbox_export_mail`
 
 **注意 `inbox_credentials` 只读**：没有「用工具保存凭据」的 tool，因为密钥一旦作为参数传进来就会留在对话记录里。保存只在面板的粘贴框里做。
 
@@ -120,7 +134,7 @@ dsh plugin --profile web add git+https://github.com/Jessicaisleep/dsh-source-inb
 
 安装结果需出现 `application:applied` 才算生效（宿主开着 HMR 时，覆盖安装会先报 `already-installed`，先 `remove` 再 `add`）。本包为纯 ESM JavaScript、**零外部依赖**、不需要构建步骤；`engines.dsh` 声明为 `^0.2.1-rc.1 || ^0.2.2-rc.1 || ^0.2.3-rc.1`，宿主在安装与启动时都会校验（每加一个 0.x 的 rc 分支都要显式写出来：node-semver 默认不让未列出的预发布版本满足范围，写 `^0.2.1-rc.1` 时 `0.2.3-rc.1` 是**不匹配**的）。
 
-装好后：侧栏出现「素材收件箱」面板；agent 侧多出 13 个 `inbox_*` 工具。首次使用建议先看面板里「数据源清单」每行的 `↗` 入口与编号步骤。
+装好后：侧栏出现「素材收件箱」面板；agent 侧多出 17 个 `inbox_*` 工具。首次使用建议先看面板里「数据源清单」每行的 `↗` 入口、编号步骤、`▶` 按钮与凭据输入框。
 
 ## 许可
 
@@ -128,7 +142,7 @@ MIT。见 [LICENSE](./LICENSE)。
 
 ## 后续 Phase
 
-Phase 1 已落「投放区观察器」作为所有 file-producing 源（Wandao / 微信合并转发 ZIP / DeepSeek 导出 / 元宝转文档）的统一底座。Phase 2 已落「登录后分步引导 + 插件自读本人已登录页」。下一步：**官方 MCP / API 适配器**（腾讯文档个人 Token / 飞书 App ID+Secret / 夸克登录）—— 需用户先给一次账号授权，按 L0→L3 逐个加；其后 Phase 3 万能导文字轨 → Phase 4 素材轨文字影子 + AI 对话片段。每个源做成可插拔适配器，逐个加。
+Phase 1 已落「投放区观察器」作为所有 file-producing 源（各平台官方导出 ZIP / 微信合并转发 ZIP / DeepSeek 导出 / 元宝转文档）的统一底座。Phase 2 已落「登录后分步引导 + 插件自读本人已登录页」。Phase 3 把原本要靠第三方包做的能力（链接转 Markdown、微信读书划线导出、Cubox 收藏同步、IMAP 收邮件）全部实现进插件本体，面板里不再出现任何要求你自己去搜索安装的包名。下一步：**官方 MCP / API 适配器**（腾讯文档个人 Token / 飞书 App ID+Secret / 夸克登录）—— 需用户先给一次账号授权，按 L0→L3 逐个加；其后 Phase 4 素材轨文字影子 + AI 对话片段。每个源做成可插拔适配器，逐个加。
 
 ## 测试
 
@@ -137,11 +151,13 @@ node tests/smoke.mjs               # schema / store / import 归一化
 node tests/adapters-harness.mjs    # 观察器 + 配置持久化 + 合规闸门
 node tests/browser-harness.mjs     # 白名单闸门 / 端口钳制 / 登录墙启发式 / 启动参数
 node tests/credentials-harness.mjs # 凭据保险库：裸文件名 / 声明字段 / 打码 / 原子写 / 清除
-node tests/host-harness.mjs        # 17 路由 + 13 工具 + 守卫 + 凭据不回传明文 + cleanup
-node tests/client-harness.mjs      # 面板渲染 / 28 行按钮 / steps / 自读 / 凭据输入框 / 删除 / 词典
+node tests/fetchdoc-harness.mjs    # 链接转 Markdown：URL 门 / 实体 / 表格 / 代码围栏 / 重定向内网
+node tests/exporters-harness.mjs   # 微信读书 + Cubox + IMAP：假 fetch 注入，不联网
+node tests/host-harness.mjs        # 21 路由 + 17 工具 + 守卫 + 凭据不回传明文 + cleanup
+node tests/client-harness.mjs      # 面板渲染 / 27 行按钮 / steps / 自读 / 凭据输入框 / ▶ 按钮 / 删除 / 词典
 ```
 
-共 **496 项**，全部 `exit=0`。
+共 **662 项**，全部 `exit=0`。
 
 两个已修的回归（都有对应用例，防止再犯）：
 

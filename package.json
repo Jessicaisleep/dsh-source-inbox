@@ -1,7 +1,7 @@
 {
   "name": "dsh-source-inbox",
-  "version": "0.1.1",
-  "description": "DSH source inbox: archive your own material from 28 platforms into one local knowledge base — official entry links, step-by-step login guidance, paste-a-credential boxes, and a controlled browser that reads your own logged-in pages. · 素材收件箱：把你自己各平台账号的资料汇聚进本地知识库的统一工作栏。",
+  "version": "0.2.0",
+  "description": "DSH source inbox: archive your own material from 27 platforms into one local knowledge base — official entry links, step-by-step login guidance, paste-a-credential boxes, a controlled browser that reads your own logged-in pages, and link-to-Markdown / WeRead / Cubox / IMAP built in with zero third-party packages. · 素材收件箱：把你自己各平台账号的资料汇聚进本地知识库的统一工作栏。",
   "type": "module",
   "main": "./index.js",
   "icon": "./icon.svg",
@@ -33,6 +33,8 @@
     "knowledge-base",
     "archive",
     "import",
+    "markdown",
+    "imap",
     "mcp"
   ],
   "license": "MIT",
@@ -49,7 +51,7 @@
     "dsh": "^0.2.1-rc.1 || ^0.2.2-rc.1 || ^0.2.3-rc.1"
   },
   "scripts": {
-    "test": "node tests/smoke.mjs && node tests/adapters-harness.mjs && node tests/browser-harness.mjs && node tests/credentials-harness.mjs && node tests/host-harness.mjs && node tests/client-harness.mjs"
+    "test": "node tests/smoke.mjs && node tests/adapters-harness.mjs && node tests/browser-harness.mjs && node tests/credentials-harness.mjs && node tests/fetchdoc-harness.mjs && node tests/exporters-harness.mjs && node tests/host-harness.mjs && node tests/client-harness.mjs"
   },
   "dsh": {
     "bundle": {

@@ -189,7 +189,7 @@ ok(!/fetch\((['"`])\//.test(code), 'no root-absolute fetch() path in client.js')
 
 // ---- Phase: per-source official entry buttons (login / authorize / export) ----
 const { SOURCES, AUTH_KINDS } = await import('../lib/sources.js');
-ok(Array.isArray(SOURCES) && SOURCES.length === 28, `registry still has 28 sources (got ${SOURCES.length})`);
+ok(Array.isArray(SOURCES) && SOURCES.length === 27, `registry still has 27 sources (got ${SOURCES.length})`);
 const zhDict = dictionaries[0].dict.zh;
 const enDict = dictionaries[0].dict.en;
 for (const k of ['authOauth', 'authToken', 'authLogin', 'authExport', 'authLocal', 'authOpen', 'groupHint', 'authNoLinkLocal', 'authNoLinkExport', 'authNoLinkToken', 'stepLabel', 'stepGet', 'stepWhere', 'readSelf', 'readBusy', 'readOk', 'readFail', 'readPageHint', 'readLoginNeeded', 'removeLabel', 'removeConfirm', 'removeOk', 'removeFail',
@@ -228,7 +228,7 @@ ok(SOURCES.filter((s) => s.tier === 'L2').every((s) => s.links.length > 0 && s.a
   'every web-login (L2) row links its login page (or is a local tool)');
 
 // WIRING: the row renderer is a real component, and the click path is openExternal.
-ok(/function SourceRow\(\{ s, t, onRead, reading, cred, credBusy, onSaveCred, onClearCred \}\)/.test(code), 'client.js defines a SourceRow component');
+ok(/function SourceRow\(\{ s, t, onRead, reading, cred, credBusy, onSaveCred, onClearCred, actBusy, onAction \}\)/.test(code), 'client.js defines a SourceRow component');
 ok(code.includes('h(SourceRow, {') && /key: s\.id, s, t,/.test(code), 'the registry maps every source through SourceRow');
 ok(/onClick: \(\) => openExternal\(l\.url\)/.test(code), 'each link button opens the URL via openExternal');
 ok(code.includes('↗ '), 'link buttons render an ↗ affordance');
@@ -278,6 +278,7 @@ const constFromCode = (name) => {
 };
 const AUTH_KEY = constFromCode('AUTH_KEY');
 const NO_LINK_KEY = constFromCode('NO_LINK_KEY');
+const ACT_LABEL = constFromCode('ACT_LABEL');
 const tZh = (k) => zhDict[k] ?? k;
 // SourceRow's header is destructured (`function SourceRow({ s, t }) {`), so the
 // generic extractFn would stop at the parameter brace — match the body instead.
@@ -293,12 +294,12 @@ const extractComponent = (src, header) => {
   return src.slice(start, end);
 };
 const makeRow = (openSpy) => new Function(
-  'h', 'C', 'focusable', 'LINK_BTN', 'CHIP', 'CRED_INPUT', 'AUTH_KEY', 'NO_LINK_KEY', 'openExternal', 't',
+  'h', 'C', 'focusable', 'LINK_BTN', 'CHIP', 'CRED_INPUT', 'AUTH_KEY', 'NO_LINK_KEY', 'ACT_LABEL', 'openExternal', 't',
   extractComponent(code, 'function SourceRow') + '\nreturn SourceRow;',
 )(
   hShim,
   { bgBase: 'bg', border: 'bd', radius: 'r', label: 'l', label2: 'l2', label3: 'l3', brand: 'brand', success: 'ok', error: 'err' },
-  {}, {}, {}, {}, AUTH_KEY, NO_LINK_KEY, openSpy, tZh,
+  {}, {}, {}, {}, AUTH_KEY, NO_LINK_KEY, ACT_LABEL, openSpy, tZh,
 );
 const walk = (node, out = []) => {
   if (node === null || node === undefined) return out;
@@ -336,7 +337,7 @@ for (const s of SOURCES) {
     rowFailures.push(`${s.id}:no-auth-chip`);
   }
 }
-ok(rowFailures.length === 0, `all 28 rows render their own buttons/explanation (bad: ${rowFailures.slice(0, 4).join(' | ')})`);
+ok(rowFailures.length === 0, `all 27 rows render their own buttons/explanation (bad: ${rowFailures.slice(0, 4).join(' | ')})`);
 
 // ---- Phase 2 RENDER: follow-up steps + the self-read affordance ----
 let stepFailures = [];
@@ -375,7 +376,13 @@ ok(readCalls.length === 1 && readCalls[0].url === dv.reads[2].url, 'clicking the
 const busyText = textOf(makeRow(() => {})({ s: dv, t: tZh, onRead: () => {}, reading: true }));
 ok(busyText.includes(tZh('readBusy')), 'the button shows a busy label while reading');
 const noReadText = textOf(makeRow(() => {})({ s: SOURCES.find((s) => s.id === 'obsidian'), t: tZh, onRead: () => {}, reading: false }), 'obsidian row has no self-read button');
-ok(noReadRows.every((s) => !textOf(makeRow(() => {})({ s, t: tZh, onRead: () => {}, reading: false })).includes(tZh('readSelf'))), 'rows without a readable page never show the self-read button');
+// A row without its own readable page must not render the ⟳ button. Its step
+// text may still TELL the user to use "让插件自己读" on another row, so match
+// the button glyph rather than any occurrence of the phrase.
+const readBtnCount = (s) => buttonsOf(makeRow(() => {})({ s, t: tZh, onRead: () => {}, reading: false }))
+  .filter((b) => String(b.props.children ?? '').startsWith('⟳')).length;
+ok(noReadRows.every((s) => readBtnCount(s) === 0), 'rows without a readable page render no self-read button');
+ok(readRows.every((s) => readBtnCount(s) === s.reads.length), 'every readable row renders exactly one button per page');
 ok(noReadRows.length + readRows.length === SOURCES.length, 'every row is classified as readable or not');
 
 // Clicking a rendered button must forward exactly that row's official URL.

@@ -85,8 +85,8 @@ mod.apply(ctx.baseCtx, { dataDir });
 // Wait for store.init() (mkdir + manifest read) to settle.
 await new Promise((r) => setTimeout(r, 80));
 
-ok(ctx.routes.size === 17, `17 routes registered (got ${ctx.routes.size})`);
-ok(ctx.tools.size === 13, `13 tools registered (got ${ctx.tools.size})`);
+ok(ctx.routes.size === 21, `21 routes registered (got ${ctx.routes.size})`);
+ok(ctx.tools.size === 17, `17 tools registered (got ${ctx.tools.size})`);
 ok(ctx.effects.length === 3, `3 effects mounted (got ${ctx.effects.length})`);
 
 async function call(path, opts = {}) {
@@ -347,7 +347,7 @@ const vcall = async (path, opts = {}) => {
   return res;
 };
 
-ok(vctx.routes.size === 17, `the vault keeps the route count (got ${vctx.routes.size})`);
+ok(vctx.routes.size === 21, `the vault keeps the route count (got ${vctx.routes.size})`);
 let vr = await vcall('/dsh-source-inbox/api/credentials');
 ok(vr.statusCode === 200 && vr.json().ok === true, 'GET /credentials -> 200');
 ok(vr.json().count === 8 && vr.json().items.length === 8, 'it lists all 8 credential sources');
@@ -409,8 +409,8 @@ for (const e of badCtx.effects) { if (typeof e.cleanup === 'function') e.cleanup
 
 // cleanup: all disposers remove routes + tools
 for (const e of ctx.effects) { if (typeof e.cleanup === 'function') e.cleanup(); }
-ok(ctx.routes.size === 0, 'cleanup removes all 17 routes (got ' + ctx.routes.size + ')');
-ok(ctx.tools.size === 0, 'cleanup removes all 13 tools (got ' + ctx.tools.size + ')');
+ok(ctx.routes.size === 0, 'cleanup removes all 21 routes (got ' + ctx.routes.size + ')');
+ok(ctx.tools.size === 0, 'cleanup removes all 17 tools (got ' + ctx.tools.size + ')');
 
 rmSync(watchDir, { recursive: true, force: true });
 rmSync(dataDir, { recursive: true, force: true });

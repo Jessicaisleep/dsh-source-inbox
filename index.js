@@ -15,6 +15,8 @@
  *  - dshmarket/lib/routes.js:2438-2454 exact-path routes + sendJson
  */
 import { isIP } from 'node:net';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Store, resolveDataDir } from './lib/store.js';
 import { importPath, validateImportPath } from './lib/import.js';
 import {
@@ -24,6 +26,12 @@ import {
 import { AdapterRuntime } from './lib/adapters.js';
 import { BrowserBridge, readAllowed, clampPort } from './lib/browser.js';
 import { resolveSecretsDir, credentialStatus, saveCredential, clearCredential } from './lib/credentials.js';
+// Phase 3: capabilities that used to be "install this third-party package" are
+// implemented in-house — the panel must not send users searching for a name.
+import { fetchDocument, slugFromTitle } from './lib/fetchdoc.js';
+import { exportHighlights } from './lib/weread.js';
+import { exportCards } from './lib/cubox.js';
+import { fetchRecentMail, guessImapHost } from './lib/mailimap.js';
 
 const API = '/dsh-source-inbox/api';
 
@@ -165,6 +173,55 @@ async function archiveRead(rt, sourceId, page, result) {
       remoteRef: result.url || page.url,
     },
     markdown: body,
+  });
+  return { record, duplicate };
+}
+
+/**
+ * Read one saved credential field, straight from the vault.
+ *
+ * Deliberately narrow: only the in-house exporters call this, only for their own
+ * source, and the value goes into an outbound request — never into a response,
+ * a log line, or a tool result.
+ */
+async function readSecret(rt, sourceId, fieldKey) {
+  const spec = credentialSpec(sourceId);
+  if (!spec) return { ok: false, reason: `source "${sourceId}" takes no credential` };
+  if (!rt.secrets.ok) return { ok: false, reason: rt.secrets.reason };
+  const file = spec.file;
+  try {
+    const text = await readFile(join(rt.secrets.dir, file), 'utf8');
+    const parsed = JSON.parse(text);
+    const value = typeof parsed?.[fieldKey] === 'string' ? parsed[fieldKey].trim() : '';
+    if (!value) return { ok: false, reason: `还没有保存 ${fieldKey}（先在上面那个输入框里粘贴并保存）` };
+    return { ok: true, value };
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { ok: false, reason: `还没有保存 ${sourceId} 的凭据（先在上面那个输入框里粘贴并保存）` };
+    return { ok: false, reason: `读取凭据失败：${String(error?.message ?? error).slice(0, 120)}` };
+  }
+}
+
+/**
+ * Archive an in-house export (weread / cubox / email / fetched link) as one
+ * Markdown record. Same shape as archiveRead so the panel and the KB see one
+ * kind of thing regardless of which exporter produced it.
+ */
+async function archiveDoc(rt, sourceId, doc) {
+  const title = String(doc.title ?? '').trim() || '(无标题)';
+  const markdown = String(doc.markdown ?? '').trim();
+  const buf = Buffer.from(markdown, 'utf8');
+  const { record, duplicate } = await rt.store.put({
+    buf,
+    record: {
+      source: sourceId,
+      sourceType: 'document',
+      title,
+      mimeType: 'text/markdown',
+      storage: 'materialized',
+      tags: ['export', sourceId],
+      remoteRef: doc.remoteRef ?? '',
+    },
+    markdown,
   });
   return { record, duplicate };
 }
@@ -406,6 +463,118 @@ function mountRoutes(ctx, rt) {
       json(res, 200, await clearCredential(rt.secrets.dir, spec.sourceId, spec));
     });
 
+    // ---- Phase 3: in-house exporters ----
+    // Each of these used to be a line of guidance telling the user to install
+    // some third-party package. The capability now lives in this plugin, so the
+    // panel has a button and the user installs nothing.
+
+    // Paste one https link, get Markdown in the KB. Replaces the old
+    // "交给 envoy-dsh / dsh-link-parse" instruction.
+    wrap({ path: `${API}/fetch/url`, method: 'POST' }, async (req, res) => {
+      const body = await readJsonBody(req);
+      const result = await fetchDocument(body.url, { maxChars: body.maxChars });
+      if (!result.ok) return json(res, 400, { ok: false, error: result.reason });
+      let archived = null;
+      if (body.archive !== false) {
+        archived = await archiveDoc(rt, String(body.source ?? 'link-parse'), {
+          title: result.title || slugFromTitle(result.title, 'link'),
+          markdown: [
+            `# ${result.title || result.url}`,
+            '',
+            `- 原文：${result.url}`,
+            `- 抓取时间：${new Date().toISOString()}`,
+            '',
+            '> 由 dsh-source-inbox 直接抓取页面正文并转 Markdown；仅本地归档。',
+            '',
+            result.markdown,
+          ].join('\n'),
+          remoteRef: result.url,
+        });
+      }
+      json(res, 200, {
+        ok: true,
+        url: result.url,
+        title: result.title,
+        chars: result.chars,
+        truncated: result.truncated,
+        markdown: result.markdown,
+        archived: archived ? { id: archived.record.id, duplicate: archived.duplicate } : null,
+      });
+    });
+
+    // WeRead highlights -> one Markdown record per book. Replaces weread-export.
+    wrap({ path: `${API}/export/weread`, method: 'POST' }, async (req, res) => {
+      const body = await readJsonBody(req);
+      const cookie = await readSecret(rt, 'weread', 'cookie');
+      if (!cookie.ok) return json(res, 400, { ok: false, error: cookie.reason });
+      const out = await exportHighlights(cookie.value, { limit: body.limit });
+      if (!out.ok) return json(res, 400, { ok: false, error: out.reason });
+      const archived = [];
+      for (const doc of out.docs) {
+        const a = await archiveDoc(rt, 'weread', {
+          title: doc.book.title,
+          markdown: doc.markdown,
+          remoteRef: `https://weread.qq.com/web/bookDetail/${doc.book.bookId}`,
+        });
+        archived.push({ id: a.record.id, title: doc.book.title, highlights: doc.count, duplicate: a.duplicate });
+      }
+      json(res, 200, {
+        ok: true,
+        shelfTotal: out.shelfTotal,
+        scanned: out.scanned,
+        exported: archived.length,
+        archived,
+        failures: out.failures,
+      });
+    });
+
+    // Cubox cards -> one Markdown record each. Replaces dsh-cubox.
+    wrap({ path: `${API}/export/cubox`, method: 'POST' }, async (req, res) => {
+      const body = await readJsonBody(req);
+      const api = await readSecret(rt, 'cubox', 'apiUrl');
+      if (!api.ok) return json(res, 400, { ok: false, error: api.reason });
+      const out = await exportCards(api.value, { limit: body.limit });
+      if (!out.ok) return json(res, 400, { ok: false, error: out.reason });
+      const archived = [];
+      for (const doc of out.docs) {
+        const a = await archiveDoc(rt, 'cubox', {
+          title: doc.card.title || doc.card.url,
+          markdown: doc.markdown,
+          remoteRef: doc.card.url,
+        });
+        archived.push({ id: a.record.id, title: doc.card.title, duplicate: a.duplicate });
+      }
+      json(res, 200, { ok: true, fetched: out.count, exported: archived.length, archived });
+    });
+
+    // Newest mail over IMAP -> one Markdown record each. Replaces dsh-email.
+    wrap({ path: `${API}/export/mail`, method: 'POST' }, async (req, res) => {
+      const body = await readJsonBody(req);
+      const host = await readSecret(rt, 'email', 'host');
+      if (!host.ok) return json(res, 400, { ok: false, error: host.reason });
+      const user = await readSecret(rt, 'email', 'user');
+      if (!user.ok) return json(res, 400, { ok: false, error: user.reason });
+      const password = await readSecret(rt, 'email', 'password');
+      if (!password.ok) return json(res, 400, { ok: false, error: password.reason });
+      const out = await fetchRecentMail({
+        host: host.value,
+        user: user.value,
+        password: password.value,
+        limit: body.limit,
+      });
+      if (!out.ok) return json(res, 400, { ok: false, error: out.reason });
+      const archived = [];
+      for (const doc of out.docs) {
+        const a = await archiveDoc(rt, 'email', {
+          title: doc.message.subject || '(无主题)',
+          markdown: doc.markdown,
+          remoteRef: doc.message.messageId ? `mid:${doc.message.messageId}` : '',
+        });
+        archived.push({ id: a.record.id, title: doc.message.subject, duplicate: a.duplicate });
+      }
+      json(res, 200, { ok: true, exists: out.exists, fetched: out.count, exported: archived.length, archived });
+    });
+
     return () => { for (const dispose of disposers) dispose(); };
   }, 'dsh-source-inbox: API routes');
 }
@@ -498,7 +667,7 @@ function mountTools(ctx, rt) {
 
     reg({
       name: 'inbox_import',
-      description: 'Import an official export / share bundle into the inbox. Give an ABSOLUTE path to a file or directory (e.g. a WeChat 合并转发 ZIP, a DeepSeek export, a Wandao Markdown folder). Files are sniffed by magic bytes (correcting wrong extensions), MIME-classified, de-duplicated by checksum, and archived on the dual track. Returns bounded counts. Never reads or decrypts a local chat database — only user-produced export files.',
+      description: 'Import an official export / share bundle into the inbox. Give an ABSOLUTE path to a file or directory (e.g. a WeChat 合并转发 ZIP, a DeepSeek export, a Yuque Markdown export folder). Files are sniffed by magic bytes (correcting wrong extensions), MIME-classified, de-duplicated by checksum, and archived on the dual track. Returns bounded counts. Never reads or decrypts a local chat database — only user-produced export files.',
       parameters: {
         type: 'object',
         properties: {
@@ -710,6 +879,128 @@ function mountTools(ctx, rt) {
         const removed = await rt.store.remove(id);
         if (!removed) return { ok: false, error: `not found: ${id}` };
         return { ok: true, removed: removed.id, title: removed.title, source: removed.source };
+      },
+    });
+
+    reg({
+      name: 'inbox_fetch_url',
+      description: 'Fetch one https link, reduce the page to Markdown and archive it in the local knowledge base. This is the plugin\'s own reader — it replaces "hand the link to some scraper package", so nothing extra has to be installed. Private/loopback hosts are refused and the size is capped.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'https URL of the page to read' },
+          source: { type: 'string', description: 'Source id to file the record under (default link-parse)' },
+          maxChars: { type: 'number', description: 'Cap on the Markdown length (500-200000, default 60000)' },
+          archive: { type: 'boolean', description: 'Archive into the knowledge base (default true)' },
+        },
+        required: ['url'],
+      },
+      output: OUTPUT,
+      async execute(args) {
+        await rt.ready;
+        const result = await fetchDocument(args?.url, { maxChars: args?.maxChars });
+        if (!result.ok) return { ok: false, error: result.reason };
+        let archived = null;
+        if (args?.archive !== false) {
+          const a = await archiveDoc(rt, String(args?.source ?? 'link-parse'), {
+            title: result.title || slugFromTitle(result.title, 'link'),
+            markdown: `# ${result.title || result.url}\n\n- 原文：${result.url}\n\n${result.markdown}`,
+            remoteRef: result.url,
+          });
+          archived = { id: a.record.id, duplicate: a.duplicate };
+        }
+        return { ok: true, url: result.url, title: result.title, chars: result.chars, truncated: result.truncated, markdown: result.markdown, archived };
+      },
+    });
+
+    reg({
+      name: 'inbox_export_weread',
+      description: 'Export the user\'s own WeRead highlights to Markdown using the Cookie already saved in the vault, one record per book. Built into the plugin on purpose: the previous guidance told the user to install a third-party exporter, which is a supply-chain risk. Read-only endpoints, own account only.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'How many books from the shelf to scan (1-50, default 10)' },
+        },
+      },
+      output: OUTPUT,
+      async execute(args) {
+        await rt.ready;
+        const cookie = await readSecret(rt, 'weread', 'cookie');
+        if (!cookie.ok) return { ok: false, error: cookie.reason };
+        const out = await exportHighlights(cookie.value, { limit: args?.limit });
+        if (!out.ok) return { ok: false, error: out.reason };
+        const archived = [];
+        for (const doc of out.docs) {
+          const a = await archiveDoc(rt, 'weread', {
+            title: doc.book.title,
+            markdown: doc.markdown,
+            remoteRef: `https://weread.qq.com/web/bookDetail/${doc.book.bookId}`,
+          });
+          archived.push({ id: a.record.id, title: doc.book.title, highlights: doc.count, duplicate: a.duplicate });
+        }
+        return { ok: true, shelfTotal: out.shelfTotal, scanned: out.scanned, exported: archived.length, archived, failures: out.failures };
+      },
+    });
+
+    reg({
+      name: 'inbox_export_cubox',
+      description: 'Pull the newest cards from the user\'s own Cubox via the API link saved in the vault, and archive each as Markdown. Built in on purpose: the previous guidance named a third-party sync package that would have to be installed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'How many cards to pull (1-50, default 20)' },
+        },
+      },
+      output: OUTPUT,
+      async execute(args) {
+        await rt.ready;
+        const api = await readSecret(rt, 'cubox', 'apiUrl');
+        if (!api.ok) return { ok: false, error: api.reason };
+        const out = await exportCards(api.value, { limit: args?.limit });
+        if (!out.ok) return { ok: false, error: out.reason };
+        const archived = [];
+        for (const doc of out.docs) {
+          const a = await archiveDoc(rt, 'cubox', {
+            title: doc.card.title || doc.card.url,
+            markdown: doc.markdown,
+            remoteRef: doc.card.url,
+          });
+          archived.push({ id: a.record.id, title: doc.card.title, duplicate: a.duplicate });
+        }
+        return { ok: true, fetched: out.count, exported: archived.length, archived };
+      },
+    });
+
+    reg({
+      name: 'inbox_export_mail',
+      description: 'Read the newest mail over IMAP using the app password saved in the vault, and archive each message as Markdown. The IMAP client is built into the plugin (node:tls only) because the previous guidance told the user to install a mail package. Read-only: it uses BODY.PEEK and never changes flags, never sends.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'How many recent messages to read (1-50, default 10)' },
+        },
+      },
+      output: OUTPUT,
+      async execute(args) {
+        await rt.ready;
+        const host = await readSecret(rt, 'email', 'host');
+        if (!host.ok) return { ok: false, error: host.reason };
+        const user = await readSecret(rt, 'email', 'user');
+        if (!user.ok) return { ok: false, error: user.reason };
+        const password = await readSecret(rt, 'email', 'password');
+        if (!password.ok) return { ok: false, error: password.reason };
+        const out = await fetchRecentMail({ host: host.value, user: user.value, password: password.value, limit: args?.limit });
+        if (!out.ok) return { ok: false, error: out.reason };
+        const archived = [];
+        for (const doc of out.docs) {
+          const a = await archiveDoc(rt, 'email', {
+            title: doc.message.subject || '(无主题)',
+            markdown: doc.markdown,
+            remoteRef: doc.message.messageId ? `mid:${doc.message.messageId}` : '',
+          });
+          archived.push({ id: a.record.id, title: doc.message.subject, duplicate: a.duplicate });
+        }
+        return { ok: true, exists: out.exists, fetched: out.count, exported: archived.length, archived };
       },
     });
 

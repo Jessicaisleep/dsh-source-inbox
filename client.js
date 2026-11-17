@@ -126,6 +126,17 @@ window.__ModuleLoader__.load({
         credEmptyBadge: '未保存',
         credNeedRequired: '必填项还没填：{x}',
         credSecretNote: '只写本地磁盘，界面只回显打码预览；任何接口响应、日志、工具返回里都不会出现明文。',
+        actFetch: '贴链接转 Markdown',
+        actFetchHint: '贴一条 https 链接，插件自己下载、抽正文、转 Markdown 并归档；不用装任何额外工具。',
+        actFetchPlaceholder: 'https://…',
+        actFetchGo: '抓取并归档',
+        actWeread: '导出划线',
+        actCubox: '同步收藏',
+        actMail: '收取新邮件',
+        actBusy: '正在处理…',
+        actOk: '已完成',
+        actNeedCred: '先在上面把凭据粘贴保存，再点这个按钮。',
+        actResult: '已归档 {n} 条',
         errNetwork: '请求失败（宿主未就绪或路径不可达）',
         noBrowser: '宿主未声明 sidebar.panellist 侧栏 slot；工作栏仍作为 main 页面可用，工具与 API 正常。',
       },
@@ -232,6 +243,17 @@ window.__ModuleLoader__.load({
         credEmptyBadge: 'Not saved',
         credNeedRequired: 'Required field still empty: {x}',
         credSecretNote: 'Written to local disk only; the panel shows a masked preview. The plaintext never appears in an API response, a log line, or a tool result.',
+        actFetch: 'Link to Markdown',
+        actFetchHint: 'Paste one https link: the plugin downloads it, extracts the article, converts it to Markdown and archives it. Nothing else to install.',
+        actFetchPlaceholder: 'https://…',
+        actFetchGo: 'Fetch and archive',
+        actWeread: 'Export highlights',
+        actCubox: 'Sync cards',
+        actMail: 'Fetch new mail',
+        actBusy: 'Working…',
+        actOk: 'Done',
+        actNeedCred: 'Paste and save the credential above first, then press this button.',
+        actResult: 'Archived {n} record(s)',
         errNetwork: 'Request failed (host not ready or path unreachable)',
         noBrowser: 'The host did not declare the sidebar.panellist slot; the workbench is still available as a main page, and tools/API keep working.',
       },
@@ -305,6 +327,9 @@ window.__ModuleLoader__.load({
     const AUTH_KEY = { oauth: 'authOauth', token: 'authToken', login: 'authLogin', export: 'authExport', local: 'authLocal' };
     // A row without any web entry point explains WHY instead of a dead button.
     const NO_LINK_KEY = { local: 'authNoLinkLocal', export: 'authNoLinkExport', token: 'authNoLinkToken', oauth: 'authNoLinkToken', login: 'authNoLinkLocal' };
+    // action kind -> DICT key for the button caption. The row carries a spec
+    // label too, but the panel translates so both locales read naturally.
+    const ACT_LABEL = { fetch: 'actFetch', weread: 'actWeread', cubox: 'actCubox', mail: 'actMail' };
     // Secondary "open official page" button used by every registry row.
     const LINK_BTN = {
       font: 'inherit', fontSize: '11px', fontWeight: 600, color: C.brand, background: C.bgBase,
@@ -334,10 +359,11 @@ window.__ModuleLoader__.load({
      *
      * Deliberately dumb/pure: no hooks, so tests can call it directly.
      */
-    function SourceRow({ s, t, onRead, reading, cred, credBusy, onSaveCred, onClearCred }) {
+    function SourceRow({ s, t, onRead, reading, cred, credBusy, onSaveCred, onClearCred, actBusy, onAction }) {
       const links = Array.isArray(s?.links) ? s.links : [];
       const steps = Array.isArray(s?.steps) ? s.steps : [];
       const reads = Array.isArray(s?.reads) ? s.reads : [];
+      const actions = Array.isArray(s?.actions) ? s.actions : [];
       return h('div', { style: { background: C.bgBase, border: `1px solid ${C.border}`, borderRadius: C.radius, padding: '8px 10px' } },
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
           h('span', { style: { fontWeight: 600, fontSize: '12px' } }, s.label),
@@ -444,6 +470,60 @@ window.__ModuleLoader__.load({
             h('span', { style: { fontSize: '10px', color: C.label3, lineHeight: '15px', flex: '1 1 220px' } }, s.credential.note || t('credSecretNote')),
           ),
         ) : null,
+        // Buttons for capabilities this plugin implements itself (Phase 3).
+        // Before this, the row said "交给 envoy-dsh / 走 Wandao / 用 dsh-cubox"
+        // — names the user would have to search for, and a name nobody owns is
+        // a name an attacker can register. Each button here hits a route in
+        // index.js; the work happens in lib/.
+        actions.length === 0 ? null : h('div', {
+          style: { marginTop: '8px', paddingTop: '8px', borderTop: `1px dashed ${C.border}` },
+        },
+          actions.map((a, i) => {
+            const busy = !!actBusy;
+            const caption = actBusy === `run:${s.id}`
+              ? t('actBusy')
+              : (ACT_LABEL[a.kind] ? t(ACT_LABEL[a.kind]) : a.label);
+            const needsUrl = a.input === 'url';
+            return h('div', { key: `act-${i}`, style: { marginTop: i === 0 ? 0 : '6px' } },
+              h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' } },
+                needsUrl ? h('input', {
+                  type: 'url',
+                  'data-act-url': s.id,
+                  'aria-label': `${caption}：${t('actFetchPlaceholder')}`,
+                  placeholder: t('actFetchPlaceholder'),
+                  autoComplete: 'off',
+                  spellCheck: false,
+                  ...focusable,
+                  style: { ...CRED_INPUT, flex: '1 1 260px' },
+                }) : null,
+                h('button', {
+                  type: 'button',
+                  ...focusable,
+                  'data-act-kind': a.kind,
+                  title: a.note || caption,
+                  'aria-label': `${caption}：${s.label}`,
+                  disabled: typeof onAction !== 'function' || busy,
+                  style: { ...LINK_BTN, opacity: busy ? 0.6 : 1 },
+                  onClick: (e) => {
+                    if (typeof onAction !== 'function' || busy) return;
+                    // The link is read from the DOM subtree, not from state: no
+                    // reason to keep a pasted URL in component state either.
+                    let url = '';
+                    if (needsUrl) {
+                      const root = e?.currentTarget?.parentElement?.parentElement;
+                      const el = root && typeof root.querySelector === 'function'
+                        ? root.querySelector(`[data-act-url="${s.id}"]`) : null;
+                      url = String(el?.value ?? '').trim();
+                      if (!url) return;
+                    }
+                    onAction(s, a, url);
+                  },
+                }, `▶ ${caption}`),
+                h('span', { style: { fontSize: '10px', color: C.label3, lineHeight: '15px', flex: '1 1 220px' } }, a.note),
+              ),
+            );
+          }),
+        ),
       );
     }
 
@@ -519,6 +599,11 @@ window.__ModuleLoader__.load({
       const [credBusy, setCredBusy] = useState('');
       const [credMsg, setCredMsg] = useState('');
       const [credMsgOk, setCredMsgOk] = useState(false);
+      // Phase 3: in-plugin capability buttons (fetch a link / export highlights
+      // / sync cards / fetch mail). actBusy is `${sourceId}` while running.
+      const [actBusy, setActBusy] = useState('');
+      const [actMsg, setActMsg] = useState('');
+      const [actMsgOk, setActMsgOk] = useState(false);
       const mounted = useRef(true);
       const adzSeeded = useRef(false);
 
@@ -723,6 +808,45 @@ window.__ModuleLoader__.load({
         } finally { setCredBusy(''); }
       }, [credBusy, postJSON, t]);
 
+      /**
+       * Run one in-plugin capability. Each kind maps to a route that does the
+       * work locally — there is no third-party package behind any of these
+       * buttons, which is the point: the old guidance named tools the user would
+       * have to go find.
+       */
+      const runAction = useCallback(async (src, a, url) => {
+        if (!src || !a || actBusy) return;
+        const kind = String(a.kind ?? '');
+        const routeFor = {
+          fetch: `${API}/fetch/url`,
+          weread: `${API}/export/weread`,
+          cubox: `${API}/export/cubox`,
+          mail: `${API}/export/mail`,
+        }[kind];
+        if (!routeFor) return;
+        setActBusy(src.id); setActMsg(''); setActMsgOk(false);
+        try {
+          const payload = kind === 'fetch'
+            ? { url, source: src.id, archive: true }
+            : { source: src.id, archive: true };
+          const data = await postJSON(routeFor, payload);
+          if (!data?.ok) throw new Error(data?.error || data?.reason || 'rejected');
+          const n = kind === 'fetch' ? (data.archived ? 1 : 0) : Number(data.exported ?? 0);
+          // An exporter that found nothing is not a success worth dressing up:
+          // say what happened instead of claiming "已归档 0 条".
+          const parts = [`✓ ${t('actOk')}`];
+          if (n > 0) parts.push(t('actResult').replace('{n}', String(n)));
+          else if (kind !== 'fetch') parts.push('没有新增内容');
+          if (Array.isArray(data.failures) && data.failures.length) parts.push(`${data.failures.length} 条失败`);
+          setActMsgOk(true);
+          setActMsg(parts.join(' · '));
+          await loadAll();
+        } catch (e) {
+          setActMsgOk(false);
+          setActMsg(`${t('readFail')}：${String(e?.message ?? t('errNetwork'))}`);
+        } finally { setActBusy(''); }
+      }, [actBusy, postJSON, loadAll, t]);
+
       const filtered = rows.filter((r) => {
         if (storage && r.storage !== storage) return false;
         if (q && !String(r.title).toLowerCase().includes(q.toLowerCase())) return false;
@@ -870,6 +994,8 @@ window.__ModuleLoader__.load({
                   credBusy: credBusy === s.id,
                   onSaveCred: (src, values) => saveCredential(src, values),
                   onClearCred: (src) => clearCredential(src),
+                  actBusy: actBusy === s.id ? `run:${s.id}` : '',
+                  onAction: (src, a, url) => runAction(src, a, url),
                 })),
               ) : null,
             );
@@ -885,6 +1011,12 @@ window.__ModuleLoader__.load({
               role: 'status',
               style: { margin: '8px 0 0', fontSize: '11px', lineHeight: '17px', color: readMsgOk ? C.success : C.error, wordBreak: 'break-word' },
             }, readMsg)
+            : null,
+          actMsg
+            ? h('p', {
+              role: 'status',
+              style: { margin: '8px 0 0', fontSize: '11px', lineHeight: '17px', color: actMsgOk ? C.success : C.error, wordBreak: 'break-word' },
+            }, actMsg)
             : null,
         ),
 
