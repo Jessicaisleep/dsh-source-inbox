@@ -118,7 +118,7 @@ dsh plugin --profile web add git+https://github.com/Jessicaisleep/dsh-source-inb
 
 **从本地目录**（开发时）：在 DSH 里用 `plugin_manager action:install_bundle`，target 传本目录的绝对路径；或 `dsh plugin --profile web add ./dsh-source-inbox`。
 
-安装结果需出现 `application:applied` 才算生效（宿主开着 HMR 时，覆盖安装会先报 `already-installed`，先 `remove` 再 `add`）。本包为纯 ESM JavaScript、**零外部依赖**、不需要构建步骤；`engines.dsh` 声明为 `^0.2.1-rc.1 || ^0.2.2-rc.1`，宿主在安装与启动时都会校验。
+安装结果需出现 `application:applied` 才算生效（宿主开着 HMR 时，覆盖安装会先报 `already-installed`，先 `remove` 再 `add`）。本包为纯 ESM JavaScript、**零外部依赖**、不需要构建步骤；`engines.dsh` 声明为 `^0.2.1-rc.1 || ^0.2.2-rc.1 || ^0.2.3-rc.1`，宿主在安装与启动时都会校验（每加一个 0.x 的 rc 分支都要显式写出来：node-semver 默认不让未列出的预发布版本满足范围，写 `^0.2.1-rc.1` 时 `0.2.3-rc.1` 是**不匹配**的）。
 
 装好后：侧栏出现「素材收件箱」面板；agent 侧多出 13 个 `inbox_*` 工具。首次使用建议先看面板里「数据源清单」每行的 `↗` 入口与编号步骤。
 
@@ -141,7 +141,7 @@ node tests/host-harness.mjs        # 17 路由 + 13 工具 + 守卫 + 凭据不�
 node tests/client-harness.mjs      # 面板渲染 / 28 行按钮 / steps / 自读 / 凭据输入框 / 删除 / 词典
 ```
 
-共 **492 项**，全部 `exit=0`。
+共 **496 项**，全部 `exit=0`。
 
 两个已修的回归（都有对应用例，防止再犯）：
 
